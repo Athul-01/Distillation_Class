@@ -13,7 +13,7 @@ class DistillationColumn:
 
     """
     def __init__(self, N_stages, feed_stage, efficiency, \
-                 F_molar, z_F, q, reflux_ratio):
+                 F_molar, z_F, q, RefluxRatio):
 
         """ 
         instance attributes:
@@ -31,8 +31,10 @@ class DistillationColumn:
         self.feed_stage = feed_stage
         self.F_molar = F_molar
         self.q = q
-        self.z_f = z_F
-        self.reflux_ratio = reflux_ratio
+        self.z_F = z_F
+        self.RefluxRatio = RefluxRatio
+
+        self.P_col = 760 # mmHg
 
         #if efficiency is given as an array or a scalar
         if np.isscalar(efficiency):
@@ -69,7 +71,7 @@ class DistillationColumn:
     
     def get_K_values(self, T_celsius):
         """Calculate K-values using Raoult's Law (Ideal): K = Psat / P"""
-        Psat = self._get_psat(T_celsius)
+        Psat = self.get_psat(T_celsius)
         return Psat / self.P_col
     
     def _initialize_flows(self):
@@ -238,7 +240,7 @@ class DistillationColumn:
             T_new = np.zeros(self.N)
             for j in range(self.N):
                 def bubble_func(T_guess):
-                    K = self._get_K_values(T_guess)
+                    K = self.get_K_values(T_guess)
                     return K[0]*x_new[j,0] + K[1]*x_new[j,1] - 1.0
                 
                 # Use fsolve to find bubble point
@@ -250,7 +252,7 @@ class DistillationColumn:
             # Update Vapor Compositions (y)
             
             for j in range(self.N):
-                K_vals = self._get_K_values(T_new[j])
+                K_vals = self.get_K_values(T_new[j])
                 # Ideal Equilibrium
                 y_star_benz = K_vals[0] * x_new[j, 0]
                 y_star_tol  = K_vals[1] * x_new[j, 1]
@@ -276,6 +278,76 @@ class DistillationColumn:
             
         return iter_count, error
     
+
+# col = DistillationColumn(N_stages=17, feed_stage= 8, efficiency=0.7, \
+#                          F_molar=100, z_F=np.array([0.5, 0.5]), q = 1, \
+#                             RefluxRatio= 2.5)
+# col.solve()
+# print(col.x)
+
+def run_scenario_A():
+    """Scenario A: Equipment Deterioration"""
+    print("\n--- Running Scenario A: Efficiency Degradation ---")
+    
+    # Define Cases
+    cases = {
+        "Baseline (70%)": 0.70,
+        "Degraded (60%)": 0.60,
+        "Localized (Trays 5-8 at 50%)": "localized",
+        "Progressive (70% -> 55%)": "progressive"
+    }
+    
+    results = {}
+    
+    for name, eff_setting in cases.items():
+        efficiency = np.full(17, 0.70) # Default
+        
+        if eff_setting == "localized":
+            # Stages 0..16. Feed at 8. Trays are usually counted from top.
+            # Let's assume indices 5,6,7,8 are damaged.
+            efficiency[5:9] = 0.50
+        elif eff_setting == "progressive":
+            # Linear decrease from 0.70 at top (idx 1) to 0.55 at bottom (idx 15)
+            # Exclude condenser/reboiler from degradation usually, but let's apply to trays
+            linspace = np.linspace(0.70, 0.55, 15)
+            efficiency[1:16] = linspace
+        elif isinstance(eff_setting, float):
+            efficiency = np.full(17, eff_setting)
+            
+        # Reset Condenser/Reboiler to 1.0 (Theoretical stages)
+        efficiency[0] = 1.0
+        efficiency[-1] = 1.0
+        
+        # Run Model
+        # N=17 (15 trays + 1 Cond + 1 Reb), Feed @ 8 (Stage 8 is 9th physical stage approx)
+        col = DistillationColumn(N_stages=17, feed_stage= 8, efficiency=efficiency, \
+                          F_molar=100, z_F=np.array([0.5, 0.5]), q = 1, \
+                            RefluxRatio= 2.5)
+        col.solve()
+        
+        # Store Distillate Benzene Purity
+        results[name] = col.x[0, 0] # Stage 0, Benzene
+        
+        # Plot Profile for this case
+        plt.plot(col.x[:, 0], range(17), label=f"{name} (xD={col.x[0,0]:.3f})")
+
+    plt.gca().invert_yaxis()
+    plt.title("Scenario A: Liquid Composition Profiles (Benzene)")
+    plt.ylabel("Stage Number")
+    plt.xlabel("Benzene Mole Fraction (x)")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+    
+    print("Results (Benzene Purity):")
+    for k, v in results.items():
+        print(f"  {k}: {v:.4f}")
+
+a = run_scenario_A()
+
+
+
+
 
 
 

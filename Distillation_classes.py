@@ -1,6 +1,7 @@
 # Distillation classes
 
 import sys
+from typing import Literal
 print(sys.executable)
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,7 +13,7 @@ class DistillationColumn:
     A class to model a distilllation column using the first principles
 
     """
-    def __init__(self, N_stages, feed_stage, efficiency, \
+    def __init__(self, N_stages: int, feed_stage, efficiency, \
                  F_molar, z_F, q, RefluxRatio):
 
         """ 
